@@ -25,7 +25,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => isLoading = true);
 
-    final url = Uri.parse('http://192.168.50.223:4500/api/register');
+    final url = Uri.parse('http://192.168.50.51:4500/api/register');
     final body = {
       "name": nameController.text,
       "email": emailController.text,

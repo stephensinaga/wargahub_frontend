@@ -21,16 +21,18 @@ class _LoginScreenState extends State<LoginScreen> {
     checkLoginStatus();
   }
 
-  /// Mengecek apakah pengguna sudah login
+  /// Mengecek apakah pengguna sudah login sebelumnya
   Future<void> checkLoginStatus() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? token = prefs.getString('auth_token');
 
     if (token != null && token.isNotEmpty) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => DashboardScreen()),
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => DashboardScreen()),
+        );
+      });
     }
   }
 
@@ -42,8 +44,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// Fungsi login
   Future<void> loginUser(BuildContext context) async {
+    if (emailController.text.isEmpty || passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Email dan password harus diisi!')),
+      );
+      return;
+    }
+
     setState(() => isLoading = true);
-    final url = Uri.parse('http://192.168.50.223:4500/api/login');
+    final url = Uri.parse('http://192.168.50.51:4500/api/login');
 
     try {
       final response = await http.post(
@@ -59,13 +68,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (response.statusCode == 200 && data['status'] == 'success') {
         await saveToken(data['token']); // Simpan token ke local storage
+
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Login berhasil!')),
+          const SnackBar(content: Text('Login berhasil!')),
         );
-        // Arahkan ke Dashboard dan hapus history sebelumnya
-        Navigator.pushReplacement(
+
+        // Beri delay agar token benar-benar tersimpan sebelum pindah halaman
+        await Future.delayed(Duration(milliseconds: 500));
+
+        if (!mounted) return;
+
+        // Arahkan ke Dashboard dan hapus semua history sebelumnya
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => DashboardScreen()),
+          (route) => false,
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -77,7 +94,7 @@ class _LoginScreenState extends State<LoginScreen> {
         SnackBar(content: Text('Terjadi kesalahan: $e')),
       );
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -183,7 +200,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             MaterialPageRoute(builder: (context) => RegisterScreen()),
                           );
                         },
-                        child: const Text("SignUp", style: TextStyle(fontWeight: FontWeight.bold)),
+                        child: const Text("Sign Up", style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
