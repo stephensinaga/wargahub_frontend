@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:wargahub_frontend/config/constant.dart';
 
 class RegisterScreen extends StatefulWidget {
   @override
@@ -25,7 +26,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => isLoading = true);
 
-    final url = Uri.parse('http://192.168.50.51:4500/api/register');
+    final url = Uri.parse("${ApiConstants.baseUrl}/register");
     final body = {
       "name": nameController.text,
       "email": emailController.text,

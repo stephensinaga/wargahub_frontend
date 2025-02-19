@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'Dashboard.dart';
+import 'home_screen.dart';
 import 'RegisterScreen.dart';
+import 'package:wargahub_frontend/config/constant.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -24,13 +25,17 @@ class _LoginScreenState extends State<LoginScreen> {
   /// Mengecek apakah pengguna sudah login sebelumnya
   Future<void> checkLoginStatus() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     final String? token = prefs.getString('auth_token');
+
+    print("🔎 Token di SharedPreferences: ${token ?? 'Token tidak ditemukan!'}");
 
     if (token != null && token.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (context) => DashboardScreen()),
+          MaterialPageRoute(builder: (context) => HomeScreen()),
+          (route) => false,
         );
       });
     }
@@ -39,7 +44,17 @@ class _LoginScreenState extends State<LoginScreen> {
   /// Menyimpan token ke SharedPreferences
   Future<void> saveToken(String token) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setString('auth_token', token);
+    print("🟢 Menerima token dari API: $token");
+
+    bool isSaved = await prefs.setString('auth_token', token);
+    await prefs.reload();
+    await Future.delayed(Duration(milliseconds: 500));
+
+    if (isSaved) {
+      print("✅ Token berhasil disimpan di SharedPreferences: ${prefs.getString('auth_token')}");
+    } else {
+      print("❌ Gagal menyimpan token!");
+    }
   }
 
   /// Fungsi login
@@ -52,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => isLoading = true);
-    final url = Uri.parse('http://192.168.50.51:4500/api/login');
+    final url = Uri.parse("${ApiConstants.baseUrl}/login");
 
     try {
       final response = await http.post(
@@ -64,26 +79,31 @@ class _LoginScreenState extends State<LoginScreen> {
         }),
       );
 
+      print("📩 Response Code: ${response.statusCode}");
+      print("📩 Response Body: ${response.body}");
+
       final data = jsonDecode(response.body);
 
-      if (response.statusCode == 200 && data['status'] == 'success') {
-        await saveToken(data['token']); // Simpan token ke local storage
+      if (response.statusCode == 200 && data['token'] != null) {
+        String token = data['token'];
+        await saveToken(token); // Simpan token ke SharedPreferences
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login berhasil!')),
-        );
+        // 🔹 Cek apakah token tersimpan sebelum navigasi
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.reload();
+        final String? storedToken = prefs.getString('auth_token');
 
-        // Beri delay agar token benar-benar tersimpan sebelum pindah halaman
-        await Future.delayed(Duration(milliseconds: 500));
-
-        if (!mounted) return;
-
-        // Arahkan ke Dashboard dan hapus semua history sebelumnya
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => DashboardScreen()),
-          (route) => false,
-        );
+        if (storedToken != null && storedToken.isNotEmpty) {
+          print('✅ Token tersimpan, navigasi ke Dashboard');
+          if (!mounted) return;
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => HomeScreen()),
+            (route) => false,
+          );
+        } else {
+          print('❌ Token tidak tersimpan, tidak bisa navigasi ke Dashboard!');
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(data['message'] ?? 'Login gagal')),
@@ -96,6 +116,18 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
+  }
+
+  /// Tombol untuk logout (Hapus token dan kembali ke login)
+  Future<void> logoutUser() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    print('🛑 Token dihapus, kembali ke login!');
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => LoginScreen()),
+      (route) => false,
+    );
   }
 
   @override
@@ -128,12 +160,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Center(
-                    child: Image.network(
-                      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRoSL4WHG5Ypv4e4W58d5Gt4PnBEM_kZQDDhAKjZAOYLBy6V1karPn2SMil6DFkjUUeX7M&usqp=CAU",
-                      height: 100,
-                      width: 100,
-                      fit: BoxFit.cover,
-                    ),
+                    child: Icon(Icons.lock, size: 80, color: Colors.blue),
                   ),
                   const SizedBox(height: 30),
                   const Text(
@@ -158,17 +185,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () {},
-                      child: const Text(
-                        "Forgot Password?",
-                        style: TextStyle(color: Color(0xff3a57e8), fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -204,6 +220,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),

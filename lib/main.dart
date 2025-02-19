@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wargahub_frontend/screens/LoginScreen.dart';
 import 'package:wargahub_frontend/screens/RegisterScreen.dart';
-import 'package:wargahub_frontend/screens/Dashboard.dart';
+import 'package:wargahub_frontend/screens/home_screen.dart';
+import 'package:wargahub_frontend/screens/welcome_screen.dart'; // Import Welcome Screen
 
 void main() {
   runApp(MyApp());
@@ -13,12 +14,13 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      initialRoute: '/', // Halaman pertama yang ditampilkan
+      initialRoute: '/welcome', // Menampilkan Welcome Screen terlebih dahulu
       routes: {
-        '/': (context) => SplashScreen(),
+        '/welcome': (context) => WelcomeScreen(),
         '/login': (context) => LoginScreen(),
         '/register': (context) => RegisterScreen(),
-        '/dashboard': (context) => DashboardScreen(),
+        '/dashboard': (context) => HomeScreen(),
+        '/splash': (context) => SplashScreen(), // Tambahkan SplashScreen untuk cek login
       },
     );
   }
@@ -43,9 +45,9 @@ class _SplashScreenState extends State<SplashScreen> {
     await Future.delayed(const Duration(seconds: 2)); // Efek loading sebentar
 
     if (token != null && token.isNotEmpty) {
-      Navigator.pushReplacementNamed(context, '/dashboard');
+      Navigator.pushReplacementNamed(context, '/dashboard'); // Jika login, masuk ke dashboard
     } else {
-      Navigator.pushReplacementNamed(context, '/login');
+      Navigator.pushReplacementNamed(context, '/login'); // Jika tidak login, masuk ke login
     }
   }
 
