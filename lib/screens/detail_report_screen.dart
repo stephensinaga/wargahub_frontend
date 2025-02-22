@@ -49,7 +49,7 @@ class _DetailReportScreenState extends State<DetailReportScreen> {
 
       if (response.statusCode == 200) {
         setState(() {
-          report = jsonDecode(response.body);
+          report = jsonDecode(response.body)['data'];
         });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -78,38 +78,19 @@ class _DetailReportScreenState extends State<DetailReportScreen> {
               ? Center(child: Text("Data tidak ditemukan"))
               : Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: ListView(
                     children: [
-                      Center(
-                        child: Image.network(
-                          report!['image_url'] ?? "https://via.placeholder.com/150",
-                          height: 200,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
+                      // Gambar dalam bentuk carousel
+                      _buildImageCarousel(),
+
                       SizedBox(height: 16),
-                      Text("Kategori:", style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text(report!['category'] ?? "Tidak ada kategori"),
+                      _buildDetailItem("Kategori", report!['category']),
+                      _buildDetailItem("Deskripsi", report!['description']),
+                      _buildDetailItem("Lokasi", "${report!['latitude']}, ${report!['longitude']}"),
+
                       SizedBox(height: 10),
-                      Text("Deskripsi:", style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text(report!['description'] ?? "Tidak ada deskripsi"),
-                      SizedBox(height: 10),
-                      Text("Lokasi:", style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text(report!['location'] ?? "Tidak ada lokasi"),
-                      SizedBox(height: 10),
-                      Text("Status:", style: TextStyle(fontWeight: FontWeight.bold)),
-                      Container(
-                        padding: EdgeInsets.symmetric(vertical: 5, horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: _getStatusColor(report!['status']),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Text(
-                          _getStatusText(report!['status']),
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
+                      _buildStatusBadge(report!['status']),
+
                       SizedBox(height: 20),
                       Center(
                         child: ElevatedButton(
@@ -122,6 +103,68 @@ class _DetailReportScreenState extends State<DetailReportScreen> {
                     ],
                   ),
                 ),
+    );
+  }
+
+  // Widget untuk carousel gambar
+  Widget _buildImageCarousel() {
+List<String> images = [
+  if (report!['photo_1'] != null && report!['photo_1'].toString().isNotEmpty)
+    report!['photo_1'].toString(),
+  if (report!['photo_2'] != null && report!['photo_2'].toString().isNotEmpty)
+    report!['photo_2'].toString(),
+  if (report!['photo_3'] != null && report!['photo_3'].toString().isNotEmpty)
+    report!['photo_3'].toString(),
+];
+
+    if (images.isEmpty) {
+      return Center(
+        child: Text("Tidak ada gambar tersedia"),
+      );
+    }
+
+    return SizedBox(
+      height: 180,
+      child: PageView.builder(
+        itemCount: images.length,
+        itemBuilder: (context, index) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.network(
+              "${ApiConstants.urlReal}/storage/${images[index]}",
+              fit: BoxFit.cover,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // Widget untuk menampilkan detail laporan dalam bentuk rapi
+  Widget _buildDetailItem(String title, String? value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        Text(value ?? "Tidak ada data", style: TextStyle(fontSize: 14)),
+        SizedBox(height: 10),
+      ],
+    );
+  }
+
+  // Widget untuk status badge
+  Widget _buildStatusBadge(String? status) {
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: BoxDecoration(
+        color: _getStatusColor(status),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        _getStatusText(status),
+        style: TextStyle(color: Colors.white, fontSize: 14),
+        textAlign: TextAlign.center,
+      ),
     );
   }
 
