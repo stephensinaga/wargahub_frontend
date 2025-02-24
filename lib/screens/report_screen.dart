@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:wargahub_frontend/config/constant.dart';
 
 class ReportScreen extends StatefulWidget {
@@ -15,15 +13,74 @@ class ReportScreen extends StatefulWidget {
 
 class _ReportScreenState extends State<ReportScreen> {
   final TextEditingController descriptionController = TextEditingController();
+  final TextEditingController addressController = TextEditingController();
+
   String? selectedReportType;
+  String? selectedCity;
+  String? selectedDistrict;
+
   XFile? _foto1, _foto2, _foto3;
-  String? currentLocation;
-  double? latitude;
-  double? longitude;
   bool isLoading = false;
+
+List<Map<String, dynamic>> cityList = [];
+  List<String> districtList = [];
 
   final ImagePicker _picker = ImagePicker();
   final List<String> reportTypes = ["Kebersihan", "Keamanan", "Sosial", "Fasilitas Umum"];
+
+  
+
+  @override
+  void initState() {
+    super.initState();
+    fetchCities();
+  }
+
+Future<void> fetchCities() async {
+      print("Fetching cities...");
+  try {
+    final response = await http.get(Uri.parse("${ApiConstants.baseUrl}/cities"));
+      print("Response status: ${response.statusCode}");
+      print("Response body: ${response.body}");
+    
+    if (response.statusCode == 200) {
+      // Parsing JSON dengan aman
+      List<dynamic> data = jsonDecode(response.body);
+      setState(() {
+        cityList = data.map((city) => {
+          "id": city['id'],
+          "name": city['name'],
+          "districts": city['districts'].map((d) => d['name']).toList(),
+        }).toList();
+      });
+    } else {
+      print("API Error: ${response.statusCode} - ${response.body}");
+      throw Exception("Gagal mengambil data kota: ${response.statusCode}");
+    }
+  } catch (e, stackTrace) {
+    print("Error: $e");
+    print(stackTrace); // ✅ Lihat detail error
+  }
+}
+
+
+
+    void fetchDistricts(String cityName) {
+      final selectedCityData = cityList.firstWhere(
+        (city) => city['name'] == cityName,
+        orElse: () => <String, dynamic>{}, // ✅ Pastikan default adalah Map<String, dynamic>
+      );
+      
+      if (selectedCityData.isNotEmpty) {
+        setState(() {
+          districtList = List<String>.from(selectedCityData['districts']);
+        });
+      } else {
+        setState(() {
+          districtList = [];
+        });
+      }
+    }
 
   Future<void> pickImage(int fotoIndex) async {
     final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
@@ -36,39 +93,7 @@ class _ReportScreenState extends State<ReportScreen> {
     }
   }
 
-  Future<void> getLocation() async {
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Aktifkan layanan lokasi!")));
-        return;
-      }
-
-      LocationPermission permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.deniedForever) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Izin lokasi diblokir secara permanen!")));
-        return;
-      }
-
-      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best);
-      latitude = position.latitude;
-      longitude = position.longitude;
-
-      List<Placemark> placemarks = await placemarkFromCoordinates(latitude!, longitude!);
-      Placemark place = placemarks.first;
-
-      setState(() {
-        currentLocation = "${place.street}, ${place.locality}, ${place.subAdministrativeArea}";
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lokasi diperoleh!")));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Gagal mendapatkan lokasi: $e")));
-    }
-  }
-
   Future<void> submitReport() async {
-    // Pastikan semua foto sudah dipilih
     if (_foto1 == null || _foto2 == null || _foto3 == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Semua foto wajib diunggah!")),
@@ -76,8 +101,8 @@ class _ReportScreenState extends State<ReportScreen> {
       return;
     }
 
-    // Pastikan data lainnya sudah diisi
-    if (selectedReportType == null || descriptionController.text.isEmpty || currentLocation == null) {
+    if (selectedReportType == null || descriptionController.text.isEmpty || 
+        selectedCity == null || selectedDistrict == null || addressController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Harap lengkapi semua data!")),
       );
@@ -108,16 +133,21 @@ class _ReportScreenState extends State<ReportScreen> {
         ..headers['Authorization'] = "Bearer $token"
         ..fields['jenis_laporan'] = selectedReportType!
         ..fields['keterangan'] = descriptionController.text
-        ..fields['latitude'] = latitude.toString()
-        ..fields['longitude'] = longitude.toString()
-        ..fields['alamat'] = currentLocation!;
+        ..fields['kota'] = selectedCity ?? ''  // ✅ Pastikan nilai dikirim
+        ..fields['kecamatan'] = selectedDistrict ?? ''
+        ..fields['alamat'] = addressController.text;
 
       request.files.add(await http.MultipartFile.fromPath("photo_1", _foto1!.path));
       request.files.add(await http.MultipartFile.fromPath("photo_2", _foto2!.path));
       request.files.add(await http.MultipartFile.fromPath("photo_3", _foto3!.path));
 
+      print("Fields: ${request.fields}");
+
       var response = await request.send();
       var responseData = await response.stream.bytesToString();
+
+            print("Server Response: ${response.statusCode}");
+      print("Response Data: $responseData");
 
       dynamic decodedData;
       try {
@@ -135,9 +165,8 @@ class _ReportScreenState extends State<ReportScreen> {
           SnackBar(content: Text("Laporan berhasil dikirim!")),
         );
 
-        // **Tunggu 1 detik sebelum kembali ke HomeScreen agar refresh terjadi**
         Future.delayed(Duration(seconds: 1), () {
-          Navigator.pop(context, true); // Kirim nilai "true" agar HomeScreen tahu harus refresh
+          Navigator.pop(context, true);
         });
       } else {
         String errorMessage = decodedData['message'] ?? "Gagal mengirim laporan!";
@@ -157,62 +186,120 @@ class _ReportScreenState extends State<ReportScreen> {
     }
   }
 
+    @override
+    Widget build(BuildContext context) {
+      return Scaffold(
+        appBar: AppBar(title: Text("Buat Laporan")),
+        body: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 🔹 Jenis Laporan
+                Text("Jenis Laporan", style: TextStyle(fontWeight: FontWeight.bold)),
+                Wrap(
+                  children: reportTypes.map((type) {
+                    return Padding(
+                      padding: EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(type),
+                        selected: selectedReportType == type,
+                        onSelected: (selected) {
+                          setState(() {
+                            selectedReportType = selected ? type : null;
+                          });
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(height: 16),
 
+                // 🔹 Keterangan
+                Text("Keterangan", style: TextStyle(fontWeight: FontWeight.bold)),
+                TextField(
+                  controller: descriptionController,
+                  maxLines: 3,
+                  decoration: InputDecoration(border: OutlineInputBorder()),
+                ),
+                SizedBox(height: 16),
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text("Buat Laporan")),
-      body: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("Jenis Laporan", style: TextStyle(fontWeight: FontWeight.bold)),
-              Wrap(
-                children: reportTypes.map((type) {
-                  return Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(type),
-                      selected: selectedReportType == type,
-                      onSelected: (selected) {
-                        setState(() {
-                          selectedReportType = selected ? type : null;
-                        });
-                      },
-                    ),
-                  );
-                }).toList(),
-              ),
-              SizedBox(height: 16),
-              Text("Keterangan", style: TextStyle(fontWeight: FontWeight.bold)),
-              TextField(controller: descriptionController, maxLines: 3, decoration: InputDecoration(border: OutlineInputBorder())),
-              SizedBox(height: 16),
-              Text("Foto (Wajib 3)", style: TextStyle(fontWeight: FontWeight.bold)),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _imagePickerWidget(1, _foto1),
-                  _imagePickerWidget(2, _foto2),
-                  _imagePickerWidget(3, _foto3),
-                ],
-              ),
-              SizedBox(height: 16),
-              Text("Lokasi", style: TextStyle(fontWeight: FontWeight.bold)),
-              ElevatedButton.icon(onPressed: getLocation, icon: Icon(Icons.location_on), label: Text("Dapatkan Lokasi")),
-              Text(currentLocation ?? "Belum ada lokasi"),
-              SizedBox(height: 16),
-              isLoading ? Center(child: CircularProgressIndicator()) : ElevatedButton(onPressed: submitReport, child: Text("Kirim Laporan")),
-            ],
+                // 🔹 Foto (Wajib 3)
+                Text("Foto (Wajib 3)", style: TextStyle(fontWeight: FontWeight.bold)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _imagePickerWidget(1, _foto1),
+                    _imagePickerWidget(2, _foto2),
+                    _imagePickerWidget(3, _foto3),
+                  ],
+                ),
+                SizedBox(height: 16),
+
+                // 🔹 Kota
+                Text("Kota", style: TextStyle(fontWeight: FontWeight.bold)),
+                DropdownButtonFormField<String>(
+                  value: selectedCity,
+                  items: cityList.isNotEmpty
+                      ? cityList.map<DropdownMenuItem<String>>((city) {
+                          return DropdownMenuItem<String>(
+                            value: city['name'] as String,
+                            child: Text(city['name'] as String),
+                          );
+                        }).toList()
+                      : [],
+                  onChanged: cityList.isNotEmpty
+                      ? (value) {
+                          setState(() {
+                            selectedCity = value;
+                            selectedDistrict = null;
+                            fetchDistricts(value!);
+                          });
+                        }
+                      : null,
+                ),
+                SizedBox(height: 16),
+
+                // 🔹 Kecamatan
+                Text("Kecamatan", style: TextStyle(fontWeight: FontWeight.bold)),
+                DropdownButtonFormField<String>(
+                  value: selectedDistrict,
+                  items: districtList.map<DropdownMenuItem<String>>((district) {
+                    return DropdownMenuItem<String>(
+                      value: district,
+                      child: Text(district),
+                    );
+                  }).toList(),
+                  onChanged: (value) => setState(() => selectedDistrict = value),
+                ),
+                SizedBox(height: 16),
+
+                // 🔹 Alamat (Input Field yang Ditambahkan)
+                Text("Alamat", style: TextStyle(fontWeight: FontWeight.bold)),
+                TextField(
+                  controller: addressController,  // ✅ Tambahkan input untuk alamat
+                  decoration: InputDecoration(
+                    hintText: "Masukkan alamat lengkap",
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                SizedBox(height: 16),
+
+                // 🔹 Tombol Kirim
+                isLoading
+                    ? Center(child: CircularProgressIndicator())
+                    : ElevatedButton(
+                        onPressed: submitReport,
+                        child: Text("Kirim Laporan"),
+                      ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _imagePickerWidget(int index, XFile? imageFile) {
+      );
+    }
+   Widget _imagePickerWidget(int index, XFile? imageFile) {
     return GestureDetector(
       onTap: () => pickImage(index),
       child: Container(
@@ -229,3 +316,5 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 }
+
+
