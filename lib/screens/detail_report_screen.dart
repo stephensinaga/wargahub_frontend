@@ -15,18 +15,18 @@ class DetailReportScreen extends StatefulWidget {
 
 class _DetailReportScreenState extends State<DetailReportScreen> {
   Map<String, dynamic>? report;
+  List<dynamic> reportHistory = [];
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
     fetchReportDetail();
+    fetchReportHistory(); // Ambil timeline riwayat status laporan
   }
 
   Future<void> fetchReportDetail() async {
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? token = prefs.getString('auth_token');
@@ -35,9 +35,7 @@ class _DetailReportScreenState extends State<DetailReportScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Anda harus login terlebih dahulu!")),
       );
-      setState(() {
-        isLoading = false;
-      });
+      setState(() => isLoading = false);
       return;
     }
 
@@ -48,9 +46,7 @@ class _DetailReportScreenState extends State<DetailReportScreen> {
       );
 
       if (response.statusCode == 200) {
-        setState(() {
-          report = jsonDecode(response.body)['data'];
-        });
+        setState(() => report = jsonDecode(response.body)['data']);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Gagal mengambil detail laporan")),
@@ -62,9 +58,27 @@ class _DetailReportScreenState extends State<DetailReportScreen> {
         SnackBar(content: Text("Terjadi kesalahan saat mengambil data")),
       );
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> fetchReportHistory() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? token = prefs.getString('auth_token');
+
+    if (token == null) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse("${ApiConstants.baseUrl}/reports/${widget.reportId}/history"),
+        headers: {"Authorization": "Bearer $token"},
+      );
+
+      if (response.statusCode == 200) {
+        setState(() => reportHistory = jsonDecode(response.body)['data']);
+      }
+    } catch (e) {
+      print("Error: $e");
     }
   }
 
@@ -86,17 +100,24 @@ class _DetailReportScreenState extends State<DetailReportScreen> {
                       SizedBox(height: 16),
                       _buildDetailItem("Kategori", report!['category']),
                       _buildDetailItem("Deskripsi", report!['description']),
-                      _buildDetailItem("Lokasi", "${report!['latitude']}, ${report!['longitude']}"),
+                      
+                      Divider(),
+                      _buildDetailItem("Alamat", report!['address']),
+                      _buildDetailItem("Kota", report!['kota']),
+                      _buildDetailItem("Kecamatan", report!['kecamatan']),
 
                       SizedBox(height: 10),
                       _buildStatusBadge(report!['status']),
 
+                      Divider(),
+                      Text("Riwayat Perubahan Status", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      SizedBox(height: 10),
+                      _buildTimeline(),
+
                       SizedBox(height: 20),
                       Center(
                         child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                          },
+                          onPressed: () => Navigator.pop(context),
                           child: Text("Kembali"),
                         ),
                       ),
@@ -106,21 +127,18 @@ class _DetailReportScreenState extends State<DetailReportScreen> {
     );
   }
 
-  // Widget untuk carousel gambar
   Widget _buildImageCarousel() {
-List<String> images = [
-  if (report!['photo_1'] != null && report!['photo_1'].toString().isNotEmpty)
-    report!['photo_1'].toString(),
-  if (report!['photo_2'] != null && report!['photo_2'].toString().isNotEmpty)
-    report!['photo_2'].toString(),
-  if (report!['photo_3'] != null && report!['photo_3'].toString().isNotEmpty)
-    report!['photo_3'].toString(),
-];
+    List<String> images = [
+      if (report!['photo_1'] != null && report!['photo_1'].toString().isNotEmpty)
+        report!['photo_1'].toString(),
+      if (report!['photo_2'] != null && report!['photo_2'].toString().isNotEmpty)
+        report!['photo_2'].toString(),
+      if (report!['photo_3'] != null && report!['photo_3'].toString().isNotEmpty)
+        report!['photo_3'].toString(),
+    ];
 
     if (images.isEmpty) {
-      return Center(
-        child: Text("Tidak ada gambar tersedia"),
-      );
+      return Center(child: Text("Tidak ada gambar tersedia"));
     }
 
     return SizedBox(
@@ -140,7 +158,6 @@ List<String> images = [
     );
   }
 
-  // Widget untuk menampilkan detail laporan dalam bentuk rapi
   Widget _buildDetailItem(String title, String? value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,7 +169,6 @@ List<String> images = [
     );
   }
 
-  // Widget untuk status badge
   Widget _buildStatusBadge(String? status) {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
@@ -161,28 +177,60 @@ List<String> images = [
         borderRadius: BorderRadius.circular(5),
       ),
       child: Text(
-        _getStatusText(status),
+        _getStatusText(status), 
         style: TextStyle(color: Colors.white, fontSize: 14),
         textAlign: TextAlign.center,
       ),
     );
   }
 
-  Color _getStatusColor(String? status) {
+  Widget _buildTimeline() {
+    if (reportHistory.isEmpty) {
+      return Center(child: Text("Belum ada riwayat status."));
+    }
+
+    return Column(
+      children: reportHistory.map((history) {
+        return ListTile(
+          leading: _buildStatusIcon(history['status']),
+          title: Text(_getStatusText(history['status']), style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text("Diubah oleh: ${history['user']['name']} \n${_formatDate(history['created_at'])}"),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildStatusIcon(String status) {
+    IconData icon;
+    Color color;
+
     switch (status) {
       case 'pending':
-        return Colors.orange;
+        icon = Icons.hourglass_empty;
+        color = Colors.orange;
+        break;
       case 'accepted':
-        return Colors.green;
+        icon = Icons.check_circle;
+        color = Colors.green;
+        break;
       case 'rejected':
-        return Colors.red;
+        icon = Icons.cancel;
+        color = Colors.red;
+        break;
       case 'in_progress':
-        return Colors.blue;
+        icon = Icons.sync;
+        color = Colors.blue;
+        break;
       case 'completed':
-        return Colors.purple;
+        icon = Icons.done_all;
+        color = Colors.purple;
+        break;
       default:
-        return Colors.grey;
+        icon = Icons.info;
+        color = Colors.grey;
     }
+
+    return Icon(icon, color: color, size: 30);
   }
 
   String _getStatusText(String? status) {
@@ -200,5 +248,28 @@ List<String> images = [
       default:
         return "Tidak diketahui";
     }
+  }
+
+  Color _getStatusColor(String? status) {
+  switch (status) {
+    case 'pending':
+      return Colors.orange;
+    case 'accepted':
+      return Colors.green;
+    case 'rejected':
+      return Colors.red;
+    case 'in_progress':
+      return Colors.blue;
+    case 'completed':
+      return Colors.purple;
+    default:
+      return Colors.grey;
+  }
+}
+
+
+  String _formatDate(String dateString) {
+    DateTime date = DateTime.parse(dateString);
+    return "${date.day}/${date.month}/${date.year} - ${date.hour}:${date.minute}";
   }
 }

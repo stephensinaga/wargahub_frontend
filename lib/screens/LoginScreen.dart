@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'home_screen.dart';
 import 'RegisterScreen.dart';
+import 'package:wargahub_frontend/screens/dashboard_screen.dart';
 import 'package:wargahub_frontend/config/constant.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -27,6 +28,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     final String? token = prefs.getString('auth_token');
+    final String? role = prefs.getString('user_role');
+print("🔍 Role yang ditemukan saat login: $role");
+
 
     print("🔎 Token di SharedPreferences: ${token ?? 'Token tidak ditemukan!'}");
 
@@ -42,81 +46,83 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   /// Menyimpan token ke SharedPreferences
-  Future<void> saveToken(String token) async {
+  /// Menyimpan token dan role ke SharedPreferences
+  Future<void> saveUserData(String token, String role) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     print("🟢 Menerima token dari API: $token");
+    print("🟢 Menerima role dari API: $role");
 
-    bool isSaved = await prefs.setString('auth_token', token);
+    bool isTokenSaved = await prefs.setString('auth_token', token);
+    bool isRoleSaved = await prefs.setString('user_role', role);
+
+print("🔹 Role yang disimpan: ${prefs.getString('user_role')}");
+
     await prefs.reload();
     await Future.delayed(Duration(milliseconds: 500));
 
-    if (isSaved) {
-      print("✅ Token berhasil disimpan di SharedPreferences: ${prefs.getString('auth_token')}");
+    if (isTokenSaved && isRoleSaved) {
+      print("✅ Data berhasil disimpan di SharedPreferences!");
+      print("✅ Token: ${prefs.getString('auth_token')}");
+      print("✅ Role: ${prefs.getString('user_role')}");
     } else {
-      print("❌ Gagal menyimpan token!");
+      print("❌ Gagal menyimpan data!");
     }
   }
 
   /// Fungsi login
-  Future<void> loginUser(BuildContext context) async {
-    if (emailController.text.isEmpty || passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Email dan password harus diisi!')),
-      );
-      return;
-    }
-
-    setState(() => isLoading = true);
-    final url = Uri.parse("${ApiConstants.baseUrl}/login");
-
-    try {
-      final response = await http.post(
-        url,
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "email": emailController.text.trim(),
-          "password": passwordController.text,
-        }),
-      );
-
-      print("📩 Response Code: ${response.statusCode}");
-      print("📩 Response Body: ${response.body}");
-
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && data['token'] != null) {
-        String token = data['token'];
-        await saveToken(token); // Simpan token ke SharedPreferences
-
-        // 🔹 Cek apakah token tersimpan sebelum navigasi
-        final SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.reload();
-        final String? storedToken = prefs.getString('auth_token');
-
-        if (storedToken != null && storedToken.isNotEmpty) {
-          print('✅ Token tersimpan, navigasi ke Dashboard');
-          if (!mounted) return;
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => HomeScreen()),
-            (route) => false,
-          );
-        } else {
-          print('❌ Token tidak tersimpan, tidak bisa navigasi ke Dashboard!');
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'Login gagal')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Terjadi kesalahan: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => isLoading = false);
-    }
+   /// Fungsi login
+Future<void> loginUser(BuildContext context) async {
+  if (emailController.text.isEmpty || passwordController.text.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Email dan password harus diisi!')),
+    );
+    return;
   }
+
+  setState(() => isLoading = true);
+  final url = Uri.parse("${ApiConstants.baseUrl}/login");
+
+  try {
+    final response = await http.post(
+      url,
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "email": emailController.text.trim(),
+        "password": passwordController.text,
+      }),
+    );
+
+    print("📩 Response Code: ${response.statusCode}");
+    print("📩 Response Body: ${response.body}");
+
+    final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['token'] != null && data['user']['role'] != null) {
+        await saveUserData(data['token'], data['user']['role']);
+
+      if (!mounted) return;
+      print("🔹 Navigasi ke: ${data['role'] == "petugas" ? "DashboardPetugasScreen" : "HomeScreen"}");
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => 
+          data['user']['role'] == "petugas" ? DashboardPetugasScreen() : HomeScreen()),
+        (route) => false,
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(data['message'] ?? 'Login gagal, coba lagi.')),
+      );
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Terjadi kesalahan, periksa koneksi Anda.')),
+    );
+    print("❌ Error: $e");
+  } finally {
+    if (mounted) setState(() => isLoading = false);
+  }
+}
+
 
   /// Tombol untuk logout (Hapus token dan kembali ke login)
   Future<void> logoutUser() async {
